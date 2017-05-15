@@ -1,13 +1,14 @@
 {
   "name": "node-ssh",
   "version": "4.2.2",
-  "description": "SS2 with Promises",
+  "description": "SS2 with Promises - Typescript",
   "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "scripts": {
-    "test": "(apm test) && (flow check) && (eslint . )",
+    "test": "(apm test) && (flow check) && (tslint . )",
     "clean": "rm -rf lib",
-    "build": "npm run clean; babel src --out-dir lib",
-    "watch": "npm run clean; babel src --out-dir lib --watch"
+    "build": "npm run clean; tsc",
+    "watch": "npm run clean; tsc --watch"
   },
   "repository": {
     "type": "git",
@@ -19,23 +20,30 @@
     "sftp"
   ],
   "author": "steelbrain <i@steelbrain.me>",
+  "contributors": [
+      "RhodeHummel <justin.s.hummel@gmail.com>"
+  ],
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/steelbrain/node-ssh/issues"
   },
   "dependencies": {
+    "@types/assert": "0.0.31",
+    "@types/lodash": "ts2.2",
+    "@types/node": "^7.0.18",
+    "@types/ssh2": "^0.5.35",
+    "lodash": "^4.17.4",
     "sb-promisify": "^2.0.1",
     "sb-scandir": "^1.0.0",
     "shell-escape": "^0.2.0",
     "ssh2": "^0.5.0"
   },
   "devDependencies": {
-    "babel-cli": "^6.11.4",
-    "babel-preset-steelbrain": "^5.0.0",
-    "eslint-config-steelbrain": "^3.0.1",
     "flow-bin": "^0.44.0",
     "jasmine-fix": "^1.0.1",
     "pty.js": "^0.3.1",
-    "ssh2-streams": "^0.1.6"
+    "ssh2-streams": "^0.1.6",
+    "tslint": "^5.2.0",
+    "typescript": "^2.3.2"
   }
 }
