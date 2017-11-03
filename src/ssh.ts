@@ -9,6 +9,7 @@ import * as stream from "stream";
 import * as helpers from "./helpers";
 import {
     IClientChannelShell,
+    ICommand,
     IExecCommandOptions,
     IExecCommandResult,
     IExecOptions,
@@ -19,12 +20,12 @@ import {
 import scanDirectory from "sb-scandir";
 import shellEscape = require("shell-escape");
 
-export default class SSH {
+export class SSH {
     public connection?: ssh2.Client;
 
     // hooks for reading stdout during exec statements
-    public stdout: NodeJS.WritableStream;
-    public stderr: NodeJS.WritableStream;
+    public stdout: NodeJS.ReadWriteStream;
+    public stderr: NodeJS.ReadWriteStream;
 
     private references = 0;
     private sudoPassword: string;
@@ -32,8 +33,6 @@ export default class SSH {
 
     constructor(private config?: ssh2.ConnectConfig) {
         this.connection = null;
-        this.stdout = new stream.PassThrough();
-        this.stderr = new stream.PassThrough();
     }
 
     public enableSudoMode(sudoPassword: string) {
@@ -54,6 +53,8 @@ export default class SSH {
         if (!this.connection) {
             const connection = new ssh2.Client();
             this.connection = connection;
+            this.stdout = new stream.PassThrough();
+            this.stderr = new stream.PassThrough();
 
             if (!givenConfig) {
                 givenConfig = this.config;
@@ -99,11 +100,6 @@ export default class SSH {
         assert(type === "exec" || type === "sftp", "Type should either be sftp or exec");
         if (type === "exec") {
             const output = await this.exec("mkdir", ["-p", mkdirPath]);
-
-            if (!_.isString(output) && output.stdout) {
-                throw new Error(output.stdout);
-            }
-
         } else {
             assert(!givenSftp || _.isObject(givenSftp), "sftp must be an object");
             const sftp = givenSftp || await this.requestSFTP();
@@ -125,6 +121,8 @@ export default class SSH {
         }
     }
 
+    public async exec(command: string): Promise<string>;
+    public async exec(command: string, parameters: string[]): Promise<string>;
     public async exec(command: string, parameters: string[] = [], options: IExecOptions = {}) {
         assert(this.connection, "Not connected to server");
         assert(_.isObject(options) && options, "options must be an Object");
@@ -155,7 +153,7 @@ export default class SSH {
         assert(!options.cwd || _.isString(options.cwd), "options.cwd must be a string");
         assert(!options.stdin || _.isString(options.stdin), "options.stdin must be a string");
         assert(!options.options || _.isObject(options.options), "options.options must be an object");
-        assert(_.isUndefined(options.useSudo) && !_.isBoolean(options.useSudo), "options.useSudo must be a boolean");
+        assert(_.isUndefined(options.useSudo) || _.isBoolean(options.useSudo), "options.useSudo must be a boolean");
 
         if (options.cwd) {
             // NOTE: Output piping cd command to hide directory non-existent errors
@@ -167,9 +165,6 @@ export default class SSH {
         return new Promise<IExecCommandResult>((resolve, reject) => {
             const handleCallback = (originalChannel: ssh2.ClientChannel) => {
                 const channel = this.wrapChannel(originalChannel);
-
-                channel.stdout.pipe(this.stdout);
-                channel.stderr.pipe(this.stderr);
 
                 if (shouldCheckPassword) {
                     channel.once("password", (callback) => {
@@ -369,6 +364,8 @@ export default class SSH {
         if (this.references === 0 && this.connection) {
             this.connection.end();
             this.connection = null;
+            this.stdout.end();
+            this.stderr.end();
         }
     }
 
@@ -388,7 +385,7 @@ export default class SSH {
     }
 
     public shell(): Promise<IClientChannelShell> {
-        const options = {
+        const options: ssh2.ExecOptions = {
             pty: true
         };
 
@@ -401,9 +398,6 @@ export default class SSH {
 
                 const channel = this.wrapChannel(originalChannel);
 
-                channel.stdout.pipe(this.stdout);
-                channel.stderr.pipe(this.stderr);
-
                 resolve(channel);
             });
         });
@@ -411,7 +405,7 @@ export default class SSH {
 
     public sudoShell(): Promise<IClientChannelShell> {
         if (this.sudoModeEnabled) {
-            const options = {
+            const options: ssh2.ExecOptions = {
                 pty: true
             };
 
@@ -423,9 +417,6 @@ export default class SSH {
                     }
 
                     const channel = this.wrapChannel(originalChannel);
-
-                    channel.stdout.pipe(this.stdout);
-                    channel.stderr.pipe(this.stderr);
 
                     channel.once("password", (callback) => {
                         channel.write(`${this.sudoPassword}\n`);
@@ -439,24 +430,85 @@ export default class SSH {
         }
     }
 
+    public async runCommandsInShell(commands: Array<string | ICommand>, sudo = false) {
+        let output: { stdout: string[], stderr: string[] };
+        let channel: IClientChannelShell;
+        let recording = false;
+
+        output = { stdout: [], stderr: [] };
+        channel = sudo ?
+            await this.sudoShell() :
+            await this.shell();
+
+        return new Promise<string>((resolve, reject) => {
+            channel.on("prompt", () => {
+                let cmd: (ICommand | string) = commands.shift();
+                recording = false;
+
+                if (_.isString(cmd)) {
+                    cmd = { cmd, output: false };
+                }
+
+                if (cmd) {
+                    if (cmd.output) {
+                        recording = true;
+                    }
+
+                    // tslint:disable-next-line:no-console
+                    console.log("Command: " + cmd.cmd);
+                    channel.write(`${cmd.cmd}\n`);
+                } else {
+                    channel.close();
+                }
+            });
+
+            channel.stdout.on("data", saveToStdOut);
+            channel.stderr.on("data", saveToStdError);
+
+            channel.on("close", (code, signal) => {
+                if (output.stderr.length) {
+                    reject(output.stderr.join("").trim());
+                } else {
+                    resolve(output.stdout.join("").trim());
+                }
+            });
+
+            channel.resume();
+        });
+
+        function saveToStdOut(chunk) {
+            if (recording) {
+                output.stdout.push(chunk);
+            }
+        }
+
+        function saveToStdError(chunk) {
+            if (recording) {
+                output.stderr.push(chunk);
+            }
+        }
+    }
+
     private wrapChannel(originalChannel: ssh2.ClientChannel) {
         const channel: IClientChannelShell = originalChannel as IClientChannelShell;
 
         const transform = new stream.Transform({
             transform(chunk: Buffer, encoding: string, callback: () => void) {
                 try {
-                    const chunkString = chunk.toString();
+                    const lines = chunk.toString().split(/(\r\n)/g);
 
-                    if (/^\[sudo\] password for.*$/.test(chunkString)) {
-                        channel.emit("password");
-                        channel.ignoreChunk = "\r\n";
-                    } else if (/\$ $/.test(chunkString)) {
-                        channel.emit("prompt");
-                    } else if (channel.ignoreChunk === chunkString) {
-                        channel.ignoreChunk = null;
-                    } else {
-                        transform.push(chunk);
-                    }
+                    _.each(lines, (chunkString) => {
+                        if (/^\[sudo\] password for.*$/.test(chunkString)) {
+                            channel.emit("password");
+                            channel.ignoreChunk = "\r\n";
+                        } else if (/\$ $/.test(chunkString)) {
+                            channel.emit("prompt");
+                        } else if (channel.ignoreChunk === chunkString) {
+                            channel.ignoreChunk = null;
+                        } else {
+                            transform.push(chunkString);
+                        }
+                    });
                 } finally {
                     callback();
                 }
@@ -470,6 +522,14 @@ export default class SSH {
         channel.pause();
 
         channel.stdout = channel.pipe(transform) as any;
+
+        channel.stdout.pipe(this.stdout, { end: false });
+        channel.stderr.pipe(this.stderr, { end: false });
+
+        channel.once("finish", () => {
+            channel.stdout.unpipe(this.stdout);
+            channel.stderr.unpipe(this.stderr);
+        });
 
         return channel;
     }

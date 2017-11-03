@@ -51,3 +51,8 @@ export interface IClientChannelShell extends ssh2.ClientChannel {
     emit(event: "password"): this;
     emit(event: string | symbol, ...args: any[]): boolean;
 }
+
+export interface ICommand {
+    cmd: string;
+    output?: boolean;
+}

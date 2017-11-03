@@ -5,7 +5,8 @@
     ],
     "jsRules": {},
     "rules": {
-        "trailing-comma": [true, {"multiline": "never", "singleline": "never"}]
+        "trailing-comma": [true, {"multiline": "never", "singleline": "never"}],
+        "unified-signatures": false
     },
     "rulesDirectory": []
 }

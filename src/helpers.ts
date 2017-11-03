@@ -3,7 +3,7 @@
 import * as fs from "fs";
 import * as _ from "lodash";
 import * as path from "path";
-import * as promisify from "sb-promisify";
+import { promisify } from "sb-promisify";
 import * as ssh2 from "ssh2";
 import { IPutDirectoryOptions } from "./types";
 

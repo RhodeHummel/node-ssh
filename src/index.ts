@@ -1,23 +1,11 @@
-/* @flow */
-
-import { TransferOptions } from "ssh2-streams";
-import SSH from "./ssh";
-import {
+export { TransferOptions } from "ssh2-streams";
+export { SSH } from "./ssh";
+export {
     IClientChannelShell,
     IExecCommandOptions,
     IExecCommandResult,
     IExecOptions,
     ILocalRemotePair,
-    IPutDirectoryOptions
-} from "./types";
-
-export {
-    SSH,
-    TransferOptions,
-    IExecCommandOptions,
-    IExecCommandResult,
-    IExecOptions,
-    ILocalRemotePair,
     IPutDirectoryOptions,
-    IClientChannelShell
-};
+    ICommand
+} from "./types";

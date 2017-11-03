@@ -1,6 +1,6 @@
 {
   "name": "node-ssh",
-  "version": "4.2.6",
+  "version": "4.2.5",
   "description": "SS2 with Promises - Typescript",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -18,6 +18,10 @@
     "ssh",
     "ssh2",
     "sftp"
+  ],
+  "files": [
+      "lib/",
+      "src/"
   ],
   "author": "steelbrain <i@steelbrain.me>",
   "contributors": [
